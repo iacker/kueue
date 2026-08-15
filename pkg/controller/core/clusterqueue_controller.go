@@ -431,7 +431,10 @@ func (r *ClusterQueueReconciler) updateResourceMetrics(log logr.Logger, oldCq, n
 
 func (r *ClusterQueueReconciler) resyncClusterQueueGaugeMetrics(cq *kueue.ClusterQueue) {
 	cqRef := kueue.ClusterQueueReference(cq.Name)
-	metrics.ClearClusterQueueMetrics(cqRef)
+	// Only gauges are cleared here. Counters and histograms are not resynced from
+	// cache state, so dropping them on a label change would lose their history for
+	// good. This mirrors the Cohort path, where ClearCohortMetrics is gauge-only.
+	metrics.ClearClusterQueueGaugeMetrics(cqRef)
 	metrics.ClearClusterQueueMetricsOnLabelChange(cqRef)
 	metrics.ClearCacheMetrics(cq.Name)
 	metrics.ClearClusterQueueResourceMetrics(cq.Name)

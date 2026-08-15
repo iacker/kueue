@@ -454,6 +454,52 @@ var _ = ginkgo.Describe("CustomMetricLabels", ginkgo.Label("controller:clusterqu
 			ginkgo.By("verifying LQ admitted metric includes custom_team=infra")
 			util.ExpectLQAdmittedWorkloadsTotalMetric(lq, "", 1, "infra")
 		})
+
+		ginkgo.It("should keep ClusterQueue counters across a custom label change", func() {
+			cq = utiltestingapi.MakeClusterQueue("cq-label-change").
+				Label("team", "infra").
+				ResourceGroup(
+					*utiltestingapi.MakeFlavorQuotas(defaultFlavor.Name).
+						Resource(corev1.ResourceCPU, "5").
+						Obj(),
+				).Obj()
+			util.CreateClusterQueuesAndWaitForActive(ctx, k8sClient, cq)
+
+			lq := utiltestingapi.MakeLocalQueue("lq-label-change", ns.Name).
+				Label("team", "infra").
+				ClusterQueue(cq.Name).Obj()
+			util.CreateLocalQueuesAndWaitForActive(ctx, k8sClient, lq)
+
+			wl := utiltestingapi.MakeWorkload("wl-label-change", ns.Name).
+				Queue(kueue.LocalQueueName(lq.Name)).
+				Request(corev1.ResourceCPU, "1").Obj()
+			util.MustCreate(ctx, k8sClient, wl)
+
+			gomega.Eventually(func(g gomega.Gomega) {
+				var updatedWl kueue.Workload
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(wl), &updatedWl)).To(gomega.Succeed())
+				g.Expect(updatedWl.Status.Admission).ToNot(gomega.BeNil())
+			}, util.Timeout, util.Interval).Should(gomega.Succeed())
+
+			util.ExpectAdmittedWorkloadsTotalMetric(cq, "", 1, "infra")
+
+			ginkgo.By("changing the custom label value on the ClusterQueue")
+			gomega.Eventually(func(g gomega.Gomega) {
+				var updatedCq kueue.ClusterQueue
+				g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(cq), &updatedCq)).To(gomega.Succeed())
+				updatedCq.Labels["team"] = "platform"
+				g.Expect(k8sClient.Update(ctx, &updatedCq)).To(gomega.Succeed())
+			}, util.Timeout, util.Interval).Should(gomega.Succeed())
+
+			// Gauges are re-recorded under the new label value, but the counter keeps
+			// its history under the old one. Same contract as the Cohort path.
+			gomega.Consistently(func(g gomega.Gomega) {
+				v, err := testutil.GetCounterMetricValue(
+					metrics.AdmittedWorkloadsTotal.WithLabelValues(cq.Name, "", roletracker.RoleStandalone, "infra"))
+				g.Expect(err).ToNot(gomega.HaveOccurred())
+				g.Expect(int(v)).To(gomega.Equal(1))
+			}, util.ConsistentDuration, util.ShortInterval).Should(gomega.Succeed())
+		})
 	})
 
 	ginkgo.When("CustomMetricLabels and LocalQueueMetrics enabled with scheduler for LQ metrics", func() {

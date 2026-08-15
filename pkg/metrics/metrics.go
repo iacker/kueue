@@ -1241,6 +1241,13 @@ func ClearClusterQueueMetricsOnLabelChange(cq kueue.ClusterQueueReference) {
 	clearScopedGaugeMetrics(gaugeCleanupScopeClusterQueueLabelChange, prometheus.Labels{"cluster_queue": cqName})
 }
 
+// ClearClusterQueueGaugeMetrics clears the cluster_queue-scoped gauges for cqName,
+// leaving counters and histograms untouched. Use this when the series have to be
+// re-recorded under new label values, as counters cannot be resynced from cache state.
+func ClearClusterQueueGaugeMetrics(cq kueue.ClusterQueueReference) {
+	clearScopedGaugeMetrics(gaugeCleanupScopeClusterQueue, prometheus.Labels{"cluster_queue": string(cq)})
+}
+
 func ClearLocalQueueMetrics(lq LocalQueueReference) {
 	lbls := prometheus.Labels{"name": string(lq.Name), "namespace": lq.Namespace}
 	clearScopedGaugeMetrics(gaugeCleanupScopeLocalQueue, lbls)

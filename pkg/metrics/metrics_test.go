@@ -478,6 +478,27 @@ func TestClearClusterQueueMetricsOnLabelChangeOnlyClearsScopedGaugeMetrics(t *te
 	ClearClusterQueueMetrics(cqName)
 }
 
+func TestClearClusterQueueGaugeMetricsKeepsCounters(t *testing.T) {
+	const cqName = "cq-gauge-only"
+
+	AdmittedWorkload(cqName, "high", time.Second, nil, nil)
+	ReportPendingWorkloads(cqName, PendingStatusActive, 2, nil, nil)
+
+	expectFilteredMetricsCount(t, PendingWorkloads, 1, "cluster_queue", cqName)
+	if got := testutil.ToFloat64(AdmittedWorkloadsTotal.WithLabelValues(cqName, "high", roletracker.RoleStandalone)); got != 1 {
+		t.Fatalf("AdmittedWorkloadsTotal = %v, want 1 before clearing", got)
+	}
+
+	ClearClusterQueueGaugeMetrics(cqName)
+
+	expectFilteredMetricsCount(t, PendingWorkloads, 0, "cluster_queue", cqName)
+	if got := testutil.ToFloat64(AdmittedWorkloadsTotal.WithLabelValues(cqName, "high", roletracker.RoleStandalone)); got != 1 {
+		t.Errorf("AdmittedWorkloadsTotal = %v, want 1: counters must survive a label change", got)
+	}
+
+	ClearClusterQueueMetrics(cqName)
+}
+
 func TestClearCacheMetricsOnlyClearsCacheScopedGauges(t *testing.T) {
 	const cqName = "cq-cache-scope"
 
